@@ -63,6 +63,8 @@ DEFINE_string(schema, "0,1,2,3,4", "metapath schema");
 DEFINE_bool(printresult, false, "printresult");
 DEFINE_bool(printworkload, false, "printworkload");
 DEFINE_bool(save_degree, false, "save degree distribution");
+DEFINE_bool(save_walks, false, "save walks to file");
+DEFINE_string(walks_file, "../res/walks.txt", "walks output file");
 
 DEFINE_bool(autobatch, false, "use adaptive batch size");
 DEFINE_bool(batch, false, "use batch mode");
@@ -223,6 +225,35 @@ void print_res_metapath(int num_walkers, int max_depth, vtx_t* result_pool,
   printf("Total sampled: %llu\n", sampled);
 }
 
+void save_walks(int num_walkers, int max_depth, vtx_t* result_pool,
+                bool is_host = false) {
+  vtx_t* result = result_pool;
+  if (!is_host) {
+    result = reinterpret_cast<vtx_t*>(
+        malloc((u64)sizeof(vtx_t) * num_walkers * max_depth));
+    CUDA_RT_CALL(cudaMemcpy(result, result_pool,
+                            (u64)sizeof(vtx_t) * num_walkers * max_depth,
+                            cudaMemcpyDeviceToHost));
+  }
+
+  ofstream walks_ofs(FLAGS_walks_file);
+  for (int i = 0; i < num_walkers; i++) {
+    for (int j = 0; j < max_depth; j++) {
+      u64 res_offset = (u64)i * max_depth + j;
+      vtx_t vtx = result[res_offset];
+      if (vtx == -1) {
+        break;
+      }
+      if (j > 0) {
+        walks_ofs << " ";
+      }
+      walks_ofs << vtx;
+    }
+    walks_ofs << "\n";
+  }
+  walks_ofs.close();
+}
+
 int* get_metapath(int* schema_len) {
   vector<int> v_schema;
   *schema_len = 0;
@@ -372,6 +403,9 @@ int main(int argc, char* argv[]) {
   }
   if (FLAGS_save_degree) {
     degree_bucket(sample_size, depth, result_pool, ginst, is_host);
+  }
+  if (FLAGS_save_walks) {
+    save_walks(sample_size, depth, result_pool, is_host);
   }
 
   delete ginst;
